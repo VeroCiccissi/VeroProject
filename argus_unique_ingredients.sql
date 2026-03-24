@@ -1,59 +1,47 @@
 /* =============================================================================
    ARGUS SAFETY - Estrazione Principio Attivo Unico per Segnalazione
-   Scopo : Restituisce un solo principio attivo (ingrediente primario) per
-           ciascuna segnalazione (case), eliminando i duplicati.
-   DB    : Oracle Argus Safety
-   Nota  : Nel caso di più principi attivi per la stessa segnalazione viene
-           mantenuto quello con il rank più basso (SEQ_NUM minimo del prodotto
-           sospettato primario). Modificare la clausola ORDER BY per adottare
-           un criterio diverso.
+   Scopo   : Restituisce un solo principio attivo (GENERIC_NAME) per ciascuna
+             segnalazione, eliminando i duplicati causati dai followup.
+   Filtri  : Paracetamolo, DRUG_TYPE=1 (Suspect), GEN-FEB 2026,
+             esclude prodotti "Not company"
+   DB      : Oracle Argus Safety
+   Nota    : La deduplicazione avviene su CASE_ID.
+             Il DISTINCT esterno elimina i duplicati da join con CASE_FOLLOWUP.
+             Sostituire le date e il nome del principio attivo secondo necessità.
    ============================================================================= */
 
-SELECT
-    case_num,
-    case_id,
-    report_type,
-    report_date,
-    product_name,
-    ingredient_name,
-    ingredient_code
-FROM (
-    SELECT
-        cm.case_num,
-        cm.case_id,
-        cm.report_type,
-        cm.date_receiv                              AS report_date,
-        lp.product_name,
-        UPPER(TRIM(li.ingredient_name))             AS ingredient_name,
-        li.ingredient_id                            AS ingredient_code,
-        ROW_NUMBER() OVER (
-            PARTITION BY cm.case_id
-            ORDER BY
-                /* Prodotto sospettato primario (drug_type = 1) prima degli altri */
-                CASE WHEN cp.drug_type = 1 THEN 0 ELSE 1 END,
-                /* A parità di tipo, usa il numero di sequenza del prodotto */
-                cp.seq_num,
-                /* A parità assoluta, ordina alfabeticamente sul nome ingrediente */
-                UPPER(TRIM(li.ingredient_name))
-        )                                           AS rn
-    FROM
-        case_master          cm
-        /* Prodotti associati alla segnalazione */
-        JOIN case_product     cp  ON cp.case_id       = cm.case_id
-        /* Anagrafica prodotto */
-        JOIN lm_product       lp  ON lp.product_id    = cp.product_id
-        /* Tabella di raccordo prodotto-ingrediente */
-        JOIN lm_prod_ingred   pi  ON pi.product_id    = lp.product_id
-        /* Anagrafica ingrediente / principio attivo */
-        JOIN lm_ingredients   li  ON li.ingredient_id = pi.ingredient_id
-    WHERE
-        /* Solo casi validi (non cancellati) */
-        cm.case_deleted  = 0
-        /* Solo prodotti con almeno un ruolo di farmaco (esclude dispositivi, ecc.) */
-        AND cp.drug_type IN (1, 2, 3)   -- 1=Suspect, 2=Concomitant, 3=Interacting
-        /* Solo ingredienti attivi in anagrafica */
-        AND li.active_flag = 1
-)
-WHERE rn = 1   -- conserva solo il primo principio attivo per segnalazione
+SELECT DISTINCT
+    cm.case_id,
+    cm.case_num,
+    UPPER(cp.generic_name)   AS principio_attivo,
+    cp.product_name          AS nome_prodotto,
+    cm.init_rept_date        AS data_ricezione_iniziale
+FROM
+    case_master    cm,
+    case_product   cp,
+    case_followup  cf
+WHERE
+    /* Join principale */
+    cm.case_id  = cp.case_id
+    /* Join outer con followup (una segnalazione può non avere followup) */
+    AND cm.case_id = cf.case_id (+)
+    /* Solo farmaco sospetto primario */
+    AND cp.drug_type = 1
+    /* Principio attivo = Paracetamolo */
+    AND UPPER(cp.generic_name) LIKE UPPER('%Paraceta%')
+    /* Esclude prodotti non aziendali */
+    AND UPPER(cp.product_name) NOT LIKE UPPER('%Not company%')
+    /* Filtro date: segnalazione iniziale OPPURE followup nel periodo */
+    AND (
+            (
+                TRUNC(cm.init_rept_date) >= TO_DATE('01-JAN-2026', 'DD-MON-YYYY')
+                AND TRUNC(cm.init_rept_date) <= TO_DATE('28-FEB-2026', 'DD-MON-YYYY')
+            )
+            OR
+            (
+                TRUNC(cf.receipt_date)   >= TO_DATE('01-JAN-2026', 'DD-MON-YYYY')
+                AND TRUNC(cf.receipt_date)   <= TO_DATE('28-FEB-2026', 'DD-MON-YYYY')
+            )
+       )
 ORDER BY
-    case_num;
+    cm.case_num;
