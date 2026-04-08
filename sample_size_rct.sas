@@ -353,23 +353,206 @@ run;
 title;
 
 
-/* ── 7. RIEPILOGO DESIGN IN LOG ─────────────────────────────────────────────── */
+/* ── 7. SCENARIO ALTERNATIVO: PROPORZIONE UNICA PONDERATA p=0.30 ────────────── */
+/*
+   Anziché confrontare due gruppi (44% vs 21%), si usa la singola proporzione
+   ponderata p=0.30 derivata dalla media pesata dei due bracci storici.
+
+   MODELLO ONE-SAMPLE:
+       X ~ Bin(n, p)     con p = 0.30   (proporzione pooled ponderata)
+
+   TEST:
+       H0: p = p0   (valore null di riferimento)
+       H1: p = 0.30 (proporzione pooled osservata ≠ p0)
+
+   FORMULA (approssimazione normale alla Binomiale):
+       n = [z_{α/2}·√(p0(1-p0))  +  z_β·√(p1(1-p1))]²
+           ──────────────────────────────────────────────
+                          (p1 − p0)²
+
+   dove p1=0.30 (H1) e p0 è il valore null da specificare.
+
+   Valori null considerati:
+     p0=0.44  → testare che p_pool < p_ctrl  (efficacia rispetto al controllo)
+     p0=0.40  → scenario conservativo
+     p0=0.21  → testare che p_pool > p_treat (sicurezza rispetto al trattamento)
+     p0=0.50  → testare che l'incidenza sia sotto la soglia del 50%
+*/
+
+/* ── 7a. Formula one-sample binomiale – DATA step ── */
+
+data WORK.N_ONESAMPLE_BINOM;
+
+    p1      = &P_POOL;       /* X ~ Bin(n, 0.30) sotto H1                  */
+    alpha   = &ALPHA;
+    dropout = &DROPOUT;
+
+    z_a2    = probit(1 - alpha/2);    /* z_{α/2} = 1.9600 */
+    z_b     = probit(&POWER);         /* z_{β}   = 1.2816 */
+    v1      = p1 * (1 - p1);          /* Var binomiale sotto H1: 0.30*0.70  */
+
+    do p0 = 0.44, 0.40, 0.21, 0.50;
+
+        delta = abs(p1 - p0);
+        v0    = p0 * (1 - p0);        /* Var binomiale sotto H0: p0*(1-p0)  */
+
+        /* Formula one-sample (approssimazione normale alla Binomiale) */
+        n_raw  = ((z_a2 * sqrt(v0) + z_b * sqrt(v1)) / delta) ** 2;
+        n_base = ceil(n_raw);
+
+        /* Correzione continuità */
+        n_cc   = ceil(n_base + 1 / (2 * n_base * delta**2));
+
+        /* Potenza effettiva a n_base */
+        se_h1     = sqrt(v1 / n_base);
+        power_eff = probnorm(delta / se_h1 - z_a2);
+
+        /* Dropout */
+        n_adj    = ceil(n_base / (1 - dropout));
+
+        /* Etichetta interpretativa */
+        if      p0 = 0.44 then interp = "p=0.30 < p_ctrl(0.44): test efficacia";
+        else if p0 = 0.40 then interp = "p=0.30 < 0.40: scenario conservativo";
+        else if p0 = 0.21 then interp = "p=0.30 > p_treat(0.21): test sicurezza";
+        else if p0 = 0.50 then interp = "p=0.30 < 0.50: incidenza sotto soglia";
+
+        output;
+    end;
+
+    label
+        p1        = "P Osservata H1  [X~Bin(n,0.30)]"
+        p0        = "P Null H0"
+        delta     = "|p1 - p0|"
+        v0        = "Var Bin H0 = p0(1-p0)"
+        v1        = "Var Bin H1 = p1(1-p1)"
+        n_base    = "n (formula one-sample)"
+        n_cc      = "n (cont. correction)"
+        power_eff = "Potenza effettiva"
+        n_adj     = "n + dropout 10%"
+        interp    = "Interpretazione clinica";
+
+    keep p1 p0 delta v0 v1 n_base n_cc power_eff n_adj interp;
+run;
+
+proc print data=WORK.N_ONESAMPLE_BINOM noobs label;
+    title  "SCENARIO ALTERNATIVO – Test One-Sample, X~Bin(n, 0.30)";
+    title2 "Proporzione unica ponderata p=0.30 | Power=90% | Alpha=5% | Dropout=10%";
+    title3 "Endpoint: ≥&MIN_SE SE in &FOLLOWUP gg post ultima dose";
+    var p1 p0 delta v0 v1 n_base n_cc power_eff n_adj interp;
+    format p1 p0       percent6.1
+           delta v0 v1 7.4
+           n_base n_cc 6.0
+           power_eff   percent6.1
+           n_adj       6.0;
+run;
+title;
+
+
+/* ── 7b. Verifica con PROC POWER ONESAMPLEFREQ (binomiale esatta) ── */
+
+proc power;
+    title  "One-Sample – Test Binomiale Esatto su p=0.30";
+    title2 "Verifica formula | Alpha=5% | Power=90% | Two-sided";
+
+    onesamplefreq test = z
+        proportion     = &P_POOL              /* p1 = 0.30 sotto H1           */
+        nullproportion = 0.44 0.40 0.21 0.50  /* diversi valori null          */
+        alpha          = &ALPHA
+        power          = &POWER
+        sides          = 2
+        ntotal         = .;
+
+    ods output output = _power_1s;
+run;
+title;
+
+data WORK.N_ONESAMPLE_ADJ;
+    set _power_1s;
+    n_adj    = ceil(NTotal / (1 - &DROPOUT));
+    label
+        NullProportion = "P Null H0"
+        Proportion     = "P H1 (pooled)"
+        NominalPower   = "Potenza"
+        NTotal         = "n (PROC POWER)"
+        n_adj          = "n + dropout 10%";
+    keep NullProportion Proportion NominalPower NTotal n_adj;
+run;
+
+proc print data=WORK.N_ONESAMPLE_ADJ noobs label;
+    title  "One-Sample – Verifica PROC POWER + Dropout 10%";
+    format NullProportion Proportion percent6.1
+           NominalPower percent6.1
+           NTotal n_adj 6.0;
+run;
+title;
+
+
+/* ── 7c. Confronto one-sample vs two-sample ── */
+/*
+   Riepilogo side-by-side dei due approcci per lo stesso studio.
+   Il confronto guida la scelta del disegno più appropriato.
+*/
+
+data WORK.CONFRONTO_DISEGNI;
+    length disegno $55 ipotesi $55;
+
+    /* Due campioni (primario) – da WORK.N_BINOMIALE_PRIMARIO */
+    disegno  = "Two-sample (p_ctrl=44% vs p_treat=21%)";
+    ipotesi  = "H0: p_ctrl=p_treat  H1: p_ctrl≠p_treat";
+    n_pgruppo = .;
+    n_totale  = .;
+
+    /* Leggi i valori dal dataset primario */
+    set WORK.N_BINOMIALE_PRIMARIO
+            (keep = n_fleiss n_fleiss_adj n_totale_fl
+             rename=(n_fleiss=n_pgruppo n_fleiss_adj=_adj n_totale_fl=n_totale));
+    output; stop;
+run;
+
+proc sql noprint;
+    /* Aggiunge la riga one-sample per p0=0.44 (confronto più rilevante) */
+    insert into WORK.CONFRONTO_DISEGNI
+    select "One-sample (p_pool=30% vs H0: p=44%)" as disegno,
+           "H0: p=0.44  H1: p=0.30" as ipotesi,
+           . as n_pgruppo,
+           n_adj as n_totale
+    from WORK.N_ONESAMPLE_ADJ
+    where NullProportion = 0.44;
+quit;
+
+proc print data=WORK.CONFRONTO_DISEGNI noobs label;
+    title  "CONFRONTO DISEGNI – Two-sample vs One-sample";
+    title2 "Stessa potenza 90%, alpha 5%, dropout 10%";
+    var disegno ipotesi n_pgruppo n_totale;
+    label disegno   = "Disegno"
+          ipotesi   = "Ipotesi statistica"
+          n_pgruppo = "N per gruppo"
+          n_totale  = "N totale";
+    format n_pgruppo n_totale 6.0;
+run;
+title;
+
+
+/* ── 8. RIEPILOGO DESIGN IN LOG ─────────────────────────────────────────────── */
 
 %put NOTE: ;
 %put NOTE: ══════════════════════════════════════════════════════════════════;
-%put NOTE:  SAMPLE SIZE – RCT DUE GRUPPI – DISTRIBUZIONE BINOMIALE;
+%put NOTE:  SAMPLE SIZE – DISTRIBUZIONE BINOMIALE;
 %put NOTE: ══════════════════════════════════════════════════════════════════;
 %put NOTE:  Endpoint   : >= &MIN_SE SE nei &FOLLOWUP gg post ultima dose;
-%put NOTE:  Modello    : X_ctrl~Bin(n,&P_CTRL)  X_treat~Bin(n,&P_TREAT);
-%put NOTE:  P ponderata pooled (storico) : &P_POOL;
-%put NOTE:  Alpha (two-sided)            : &ALPHA;
-%put NOTE:  Potenza target               : &POWER;
-%put NOTE:  Dropout                      : &DROPOUT;
-%put NOTE:  Metodo primario              : Formula Fleiss (var. binomiale);
-%put NOTE:  Verifica                     : PROC POWER TEST=FISH (esatta);
-%put NOTE:  -> WORK.N_BINOMIALE_PRIMARIO  (analisi primaria);
-%put NOTE:  -> WORK.CONFRONTO            (formula vs esatto);
-%put NOTE:  -> WORK.SENSIBILITA_BINOMIALE (sensibilità);
+%put NOTE: ;
+%put NOTE:  [DISEGNO A – DUE CAMPIONI] (analisi primaria);
+%put NOTE:   X_ctrl~Bin(n,&P_CTRL)  vs  X_treat~Bin(n,&P_TREAT);
+%put NOTE:   Metodo: Formula Fleiss + PROC POWER TEST=FISH;
+%put NOTE:   -> WORK.N_BINOMIALE_PRIMARIO | WORK.CONFRONTO;
+%put NOTE: ;
+%put NOTE:  [DISEGNO B – ONE-SAMPLE] (scenario alternativo);
+%put NOTE:   X~Bin(n,&P_POOL)  |  p_pool=&P_POOL da media ponderata;
+%put NOTE:   H0: p=p0 (valori testati: 0.44 / 0.40 / 0.21 / 0.50);
+%put NOTE:   Metodo: Formula one-sample + PROC POWER ONESAMPLEFREQ;
+%put NOTE:   -> WORK.N_ONESAMPLE_BINOM | WORK.N_ONESAMPLE_ADJ;
+%put NOTE: ;
+%put NOTE:  Parametri comuni: alpha=&ALPHA | power=&POWER | dropout=&DROPOUT;
 %put NOTE: ══════════════════════════════════════════════════════════════════;
 %put NOTE: ;
 
