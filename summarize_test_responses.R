@@ -37,7 +37,52 @@ data <- data.frame(
 cols <- c("c2.2.", "c2.3.", "c2.5.", "c2.7.", "c2.9.", "c2.11.", "c2.13.",
           "c2.15.", "c2.17.", "c2.19.", "c2.21.", "c2.23.", "c2.25.", "c2.27.")
 
-# --- 3. Funzione analisi per ogni colonna -------------------------------------
+# --- 3. FREQUENZE ASSOLUTE E RELATIVE per ogni variabile (si / no / non so) --
+freq_table <- function(df, var) {
+  x     <- df[[var]]
+  total <- length(x)
+  n_si  <- sum(x == "si",     na.rm = TRUE)
+  n_no  <- sum(x == "no",     na.rm = TRUE)
+  n_ns  <- sum(x == "non so", na.rm = TRUE)
+  data.frame(
+    Variabile = var,
+    N_si      = n_si,
+    Pct_si    = round(100 * n_si / total, 1),
+    N_no      = n_no,
+    Pct_no    = round(100 * n_no / total, 1),
+    N_nonso   = n_ns,
+    Pct_nonso = round(100 * n_ns / total, 1),
+    Totale    = total,
+    stringsAsFactors = FALSE
+  )
+}
+
+# Includi anche la variabile risposta nel conteggio
+all_vars   <- c("response", cols)
+freq_res   <- do.call(rbind, lapply(all_vars, freq_table, df = data))
+rownames(freq_res) <- NULL
+
+cat("==========================================================================\n")
+cat("  PASSO 1 — Frequenze: SI / NO / NON SO per ogni variabile\n")
+cat("==========================================================================\n\n")
+cat(sprintf("  %-10s  %6s %7s  %6s %7s  %8s %9s  %7s\n",
+            "Variabile", "N si", "% si", "N no", "% no",
+            "N non so", "% non so", "Totale"))
+cat(paste(rep("-", 72), collapse = ""), "\n")
+for (i in seq_len(nrow(freq_res))) {
+  r <- freq_res[i, ]
+  cat(sprintf("  %-10s  %6d %6.1f%%  %6d %6.1f%%  %8d %8.1f%%  %7d\n",
+              r$Variabile, r$N_si, r$Pct_si,
+              r$N_no, r$Pct_no,
+              r$N_nonso, r$Pct_nonso, r$Totale))
+}
+cat(paste(rep("-", 72), collapse = ""), "\n\n")
+
+# Salva frequenze
+write.csv(freq_res, "frequenze_si_no_nonso.csv", row.names = FALSE)
+cat("  Frequenze salvate in: frequenze_si_no_nonso.csv\n\n")
+
+# --- 4. Funzione analisi per ogni colonna (si vs no, senza non so) ------------
 analyze_col <- function(df, var, group_var = "response") {
 
   # Rimuovi "non so" sia dalla variabile che dalla risposta
@@ -86,7 +131,7 @@ analyze_col <- function(df, var, group_var = "response") {
 results <- do.call(rbind, lapply(cols, analyze_col, df = data))
 rownames(results) <- NULL
 
-# --- 4. Stampa risultati ------------------------------------------------------
+# --- 5. Stampa risultati confronto SI vs NO -----------------------------------
 # Conta dopo rimozione "non so" dalla variabile risposta
 data_clean <- data[data$response != "non so", ]
 n_no  <- sum(data_clean$response == "no")
@@ -94,7 +139,7 @@ n_si  <- sum(data_clean$response == "si")
 n_ns  <- sum(data$response == "non so")
 
 cat("==========================================================================\n")
-cat("  Sommario & Test: risposta SI vs NO  (\"non so\" esclusi)\n")
+cat("  PASSO 2 — Test: risposta SI vs NO  (\"non so\" esclusi)\n")
 cat("  Formato colonne: n SI / N totale gruppo (%)  |  test per riga\n")
 cat("==========================================================================\n\n")
 cat(sprintf("  Risposta NO  = %d  |  Risposta SI = %d  |  Non so rimossi = %d\n\n",
@@ -118,6 +163,6 @@ for (i in seq_len(nrow(results))) {
 cat(paste(rep("-", 95), collapse = ""), "\n")
 cat("  * p < 0.05\n\n")
 
-# --- 5. Salva CSV -------------------------------------------------------------
+# --- 6. Salva CSV confronto ---------------------------------------------------
 write.csv(results, "summary_chisq_results.csv", row.names = FALSE)
 cat("  Risultati salvati in: summary_chisq_results.csv\n")
