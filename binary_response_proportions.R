@@ -52,10 +52,10 @@ for (col in colonne_c2) {
 
   if (n_val < 5) {
     risultati_test[[col]] <- data.frame(
-      colonna       = col, N_validi = n_val, n_esclusi = n_esclusi,
-      n_1 = n_pos,  n_0 = n_val - n_pos,
+      colonna   = col, N_validi = n_val, n_esclusi = n_esclusi,
+      n_1 = n_pos, n_0 = n_val - n_pos,
       prop_1 = NA, ic95_lower = NA, ic95_upper = NA,
-      p_binom = NA, p_prop = NA, significativo = NA,
+      p_binom = NA, p_prop = NA, p_fisher = NA, significativo = NA,
       row.names = NULL
     )
     next
@@ -65,17 +65,28 @@ for (col in colonne_c2) {
   pt <- prop.test(n_pos, n_val,  p = p0, alternative = "two.sided",
                   conf.level = 0.95, correct = TRUE)
 
+  # Fisher exact: tabella 2×2  osservato vs atteso sotto H0
+  # righe = 1/0, colonne = osservato/atteso
+  n0       <- n_val - n_pos
+  atteso_1 <- round(n_val * p0)
+  atteso_0 <- n_val - atteso_1
+  mat_fisher <- matrix(c(n_pos, n0, atteso_1, atteso_0),
+                       nrow = 2,
+                       dimnames = list(c("1", "0"), c("Osservato", "Atteso_H0")))
+  ft <- fisher.test(mat_fisher, conf.level = 0.95)
+
   risultati_test[[col]] <- data.frame(
     colonna       = col,
     N_validi      = n_val,
     n_esclusi     = n_esclusi,
     n_1           = n_pos,
-    n_0           = n_val - n_pos,
+    n_0           = n0,
     prop_1        = round(n_pos / n_val, 4),
     ic95_lower    = round(bt$conf.int[1], 4),
     ic95_upper    = round(bt$conf.int[2], 4),
     p_binom       = round(bt$p.value, 4),
     p_prop        = round(pt$p.value, 4),
+    p_fisher      = round(ft$p.value, 4),
     significativo = ifelse(bt$p.value < 0.05, "SI *", "no"),
     row.names = NULL
   )
