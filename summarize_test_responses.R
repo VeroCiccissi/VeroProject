@@ -1,129 +1,117 @@
-# Sommario variabili c2.x (si/no/non so) confrontate tra si vs no
-# I "non so" vengono rimossi prima dell'analisi
-# Test: Chi-quadro o Fisher esatto (automatico)
+# Sommario variabili c2.x con valori: 0, 1, nc, ns
+# nc (non compilato) e ns (non so) vengono rimossi
+# Confronto: 0 vs 1 con chi-quadro o Fisher esatto
 # ------------------------------------------------------------------------------
 
 set.seed(42)
 n <- 300
 
 # --- 1. Carica i tuoi dati ----------------------------------------------------
-# Sostituisci questa sezione con:
+# Sostituisci con:
 #   data <- read.csv("tuo_file.csv")
-#   oppure
 #   data <- readxl::read_excel("tuo_file.xlsx")
 
-vals <- c("si", "no", "non so")
+vals <- c("0", "1", "nc", "ns")
 
 data <- data.frame(
-  response = sample(vals, n, replace = TRUE, prob = c(0.5, 0.35, 0.15)),
-  c2.2.  = sample(vals, n, replace = TRUE, prob = c(0.55, 0.30, 0.15)),
-  c2.3.  = sample(vals, n, replace = TRUE, prob = c(0.40, 0.45, 0.15)),
-  c2.5.  = sample(vals, n, replace = TRUE, prob = c(0.60, 0.25, 0.15)),
-  c2.7.  = sample(vals, n, replace = TRUE, prob = c(0.35, 0.50, 0.15)),
-  c2.9.  = sample(vals, n, replace = TRUE, prob = c(0.50, 0.35, 0.15)),
-  c2.11. = sample(vals, n, replace = TRUE, prob = c(0.45, 0.40, 0.15)),
-  c2.13. = sample(vals, n, replace = TRUE, prob = c(0.65, 0.20, 0.15)),
-  c2.15. = sample(vals, n, replace = TRUE, prob = c(0.30, 0.55, 0.15)),
-  c2.17. = sample(vals, n, replace = TRUE, prob = c(0.55, 0.30, 0.15)),
-  c2.19. = sample(vals, n, replace = TRUE, prob = c(0.42, 0.43, 0.15)),
-  c2.21. = sample(vals, n, replace = TRUE, prob = c(0.60, 0.25, 0.15)),
-  c2.23. = sample(vals, n, replace = TRUE, prob = c(0.38, 0.47, 0.15)),
-  c2.25. = sample(vals, n, replace = TRUE, prob = c(0.52, 0.33, 0.15)),
-  c2.27. = sample(vals, n, replace = TRUE, prob = c(0.44, 0.41, 0.15)),
+  response = sample(vals, n, replace = TRUE, prob = c(0.35, 0.50, 0.08, 0.07)),
+  c2.2.  = sample(vals, n, replace = TRUE, prob = c(0.30, 0.55, 0.08, 0.07)),
+  c2.3.  = sample(vals, n, replace = TRUE, prob = c(0.45, 0.40, 0.08, 0.07)),
+  c2.5.  = sample(vals, n, replace = TRUE, prob = c(0.25, 0.60, 0.08, 0.07)),
+  c2.7.  = sample(vals, n, replace = TRUE, prob = c(0.50, 0.35, 0.08, 0.07)),
+  c2.9.  = sample(vals, n, replace = TRUE, prob = c(0.35, 0.50, 0.08, 0.07)),
+  c2.11. = sample(vals, n, replace = TRUE, prob = c(0.40, 0.45, 0.08, 0.07)),
+  c2.13. = sample(vals, n, replace = TRUE, prob = c(0.20, 0.65, 0.08, 0.07)),
+  c2.15. = sample(vals, n, replace = TRUE, prob = c(0.55, 0.30, 0.08, 0.07)),
+  c2.17. = sample(vals, n, replace = TRUE, prob = c(0.30, 0.55, 0.08, 0.07)),
+  c2.19. = sample(vals, n, replace = TRUE, prob = c(0.43, 0.42, 0.08, 0.07)),
+  c2.21. = sample(vals, n, replace = TRUE, prob = c(0.25, 0.60, 0.08, 0.07)),
+  c2.23. = sample(vals, n, replace = TRUE, prob = c(0.47, 0.38, 0.08, 0.07)),
+  c2.25. = sample(vals, n, replace = TRUE, prob = c(0.33, 0.52, 0.08, 0.07)),
+  c2.27. = sample(vals, n, replace = TRUE, prob = c(0.41, 0.44, 0.08, 0.07)),
   stringsAsFactors = FALSE
 )
 
-# --- 2. Nomi colonne da analizzare --------------------------------------------
+# --- 2. Colonne da analizzare -------------------------------------------------
 cols <- c("c2.2.", "c2.3.", "c2.5.", "c2.7.", "c2.9.", "c2.11.", "c2.13.",
           "c2.15.", "c2.17.", "c2.19.", "c2.21.", "c2.23.", "c2.25.", "c2.27.")
 
-# --- 3. FREQUENZE ASSOLUTE E RELATIVE per ogni variabile (si / no / non so) --
+# --- 3. PASSO 1: Frequenze 0 / 1 / nc / ns per ogni variabile ----------------
 freq_table <- function(df, var) {
-  x     <- df[[var]]
+  x     <- as.character(df[[var]])
   total <- length(x)
-  n_si  <- sum(x == "si",     na.rm = TRUE)
-  n_no  <- sum(x == "no",     na.rm = TRUE)
-  n_ns  <- sum(x == "non so", na.rm = TRUE)
   data.frame(
     Variabile = var,
-    N_si      = n_si,
-    Pct_si    = round(100 * n_si / total, 1),
-    N_no      = n_no,
-    Pct_no    = round(100 * n_no / total, 1),
-    N_nonso   = n_ns,
-    Pct_nonso = round(100 * n_ns / total, 1),
+    N_1       = sum(x == "1",  na.rm = TRUE),
+    Pct_1     = round(100 * sum(x == "1",  na.rm = TRUE) / total, 1),
+    N_0       = sum(x == "0",  na.rm = TRUE),
+    Pct_0     = round(100 * sum(x == "0",  na.rm = TRUE) / total, 1),
+    N_nc      = sum(x == "nc", na.rm = TRUE),
+    Pct_nc    = round(100 * sum(x == "nc", na.rm = TRUE) / total, 1),
+    N_ns      = sum(x == "ns", na.rm = TRUE),
+    Pct_ns    = round(100 * sum(x == "ns", na.rm = TRUE) / total, 1),
     Totale    = total,
     stringsAsFactors = FALSE
   )
 }
 
-# Includi anche la variabile risposta nel conteggio
-all_vars   <- c("response", cols)
-freq_res   <- do.call(rbind, lapply(all_vars, freq_table, df = data))
+freq_res <- do.call(rbind, lapply(c("response", cols), freq_table, df = data))
 rownames(freq_res) <- NULL
 
 cat("==========================================================================\n")
-cat("  PASSO 1 — Frequenze: SI / NO / NON SO per ogni variabile\n")
+cat("  PASSO 1 — Frequenze: 1 / 0 / nc / ns per ogni variabile\n")
 cat("==========================================================================\n\n")
-cat(sprintf("  %-10s  %6s %7s  %6s %7s  %8s %9s  %7s\n",
-            "Variabile", "N si", "% si", "N no", "% no",
-            "N non so", "% non so", "Totale"))
-cat(paste(rep("-", 72), collapse = ""), "\n")
+cat(sprintf("  %-10s  %5s %6s  %5s %6s  %5s %6s  %5s %6s  %7s\n",
+            "Variabile", "N 1", "% 1", "N 0", "% 0",
+            "N nc", "% nc", "N ns", "% ns", "Totale"))
+cat(paste(rep("-", 80), collapse = ""), "\n")
 for (i in seq_len(nrow(freq_res))) {
   r <- freq_res[i, ]
-  cat(sprintf("  %-10s  %6d %6.1f%%  %6d %6.1f%%  %8d %8.1f%%  %7d\n",
-              r$Variabile, r$N_si, r$Pct_si,
-              r$N_no, r$Pct_no,
-              r$N_nonso, r$Pct_nonso, r$Totale))
+  cat(sprintf("  %-10s  %5d %5.1f%%  %5d %5.1f%%  %5d %5.1f%%  %5d %5.1f%%  %7d\n",
+              r$Variabile,
+              r$N_1, r$Pct_1, r$N_0, r$Pct_0,
+              r$N_nc, r$Pct_nc, r$N_ns, r$Pct_ns,
+              r$Totale))
 }
-cat(paste(rep("-", 72), collapse = ""), "\n\n")
+cat(paste(rep("-", 80), collapse = ""), "\n\n")
+write.csv(freq_res, "frequenze_0_1_nc_ns.csv", row.names = FALSE)
+cat("  Frequenze salvate in: frequenze_0_1_nc_ns.csv\n\n")
 
-# Salva frequenze
-write.csv(freq_res, "frequenze_si_no_nonso.csv", row.names = FALSE)
-cat("  Frequenze salvate in: frequenze_si_no_nonso.csv\n\n")
-
-# --- 4. Funzione analisi per ogni colonna (si vs no, senza non so) ------------
+# --- 4. PASSO 2: Chi-quadro 0 vs 1 (esclusi nc e ns) -------------------------
 analyze_col <- function(df, var, group_var = "response") {
-
-  # Rimuovi "non so" sia dalla variabile che dalla risposta
-  keep <- df[[group_var]] != "non so" & df[[var]] != "non so"
+  # Tieni solo righe con 0 o 1 in entrambe le variabili
+  keep <- df[[group_var]] %in% c("0", "1") & df[[var]] %in% c("0", "1")
   sub  <- df[keep, ]
+  n_excluded <- sum(!keep)
 
-  n_removed <- sum(!keep)
+  g_var   <- as.character(sub[[group_var]])
+  col_var <- as.character(sub[[var]])
 
-  g_var   <- sub[[group_var]]
-  col_var <- sub[[var]]
+  n_0 <- sum(g_var == "0")
+  n_1 <- sum(g_var == "1")
 
-  n_no  <- sum(g_var == "no")
-  n_si  <- sum(g_var == "si")
+  # Quanti hanno valore 1 nella colonna per ogni gruppo risposta
+  v1_in_g0 <- sum(col_var == "1" & g_var == "0")
+  v1_in_g1 <- sum(col_var == "1" & g_var == "1")
 
-  # n e % di "si" nella colonna per ciascun gruppo risposta
-  si_in_no <- sum(col_var == "si" & g_var == "no")
-  si_in_si <- sum(col_var == "si" & g_var == "si")
-
-  tbl <- table(g_var, col_var)  # righe = gruppi risposta, colonne = si/no
-
-  # Scegli test: Fisher se atteso < 5, altrimenti chi-quadro
+  tbl      <- table(g_var, col_var)
   expected <- suppressWarnings(chisq.test(tbl)$expected)
   if (any(expected < 5)) {
-    test   <- fisher.test(tbl)
-    method <- "Fisher"
-    stat   <- "-"
+    test <- fisher.test(tbl); method <- "Fisher"; stat <- "-"
   } else {
-    test   <- chisq.test(tbl, correct = FALSE)
-    method <- "Chi-sq"
-    stat   <- as.character(round(test$statistic, 3))
+    test <- chisq.test(tbl, correct = FALSE)
+    method <- "Chi-sq"; stat <- as.character(round(test$statistic, 3))
   }
 
   data.frame(
-    Variabile      = var,
-    N_rimossi      = n_removed,
-    No_n_pct       = sprintf("%d / %d (%.1f%%)", si_in_no, n_no, 100 * si_in_no / max(n_no, 1)),
-    Si_n_pct       = sprintf("%d / %d (%.1f%%)", si_in_si, n_si, 100 * si_in_si / max(n_si, 1)),
-    Test           = method,
-    Statistica     = stat,
-    p_value        = round(test$p.value, 4),
-    Significativo  = ifelse(test$p.value < 0.05, "*", ""),
+    Variabile     = var,
+    N_esclusi     = n_excluded,
+    Gr0_1_pct     = sprintf("%d / %d (%.1f%%)", v1_in_g0, n_0, 100 * v1_in_g0 / max(n_0, 1)),
+    Gr1_1_pct     = sprintf("%d / %d (%.1f%%)", v1_in_g1, n_1, 100 * v1_in_g1 / max(n_1, 1)),
+    Test          = method,
+    Statistica    = stat,
+    p_value       = round(test$p.value, 4),
+    Significativo = ifelse(test$p.value < 0.05, "*", ""),
     stringsAsFactors = FALSE
   )
 }
@@ -131,38 +119,33 @@ analyze_col <- function(df, var, group_var = "response") {
 results <- do.call(rbind, lapply(cols, analyze_col, df = data))
 rownames(results) <- NULL
 
-# --- 5. Stampa risultati confronto SI vs NO -----------------------------------
-# Conta dopo rimozione "non so" dalla variabile risposta
-data_clean <- data[data$response != "non so", ]
-n_no  <- sum(data_clean$response == "no")
-n_si  <- sum(data_clean$response == "si")
-n_ns  <- sum(data$response == "non so")
+data_valid <- data[data$response %in% c("0", "1"), ]
+n_0  <- sum(data_valid$response == "0")
+n_1  <- sum(data_valid$response == "1")
+n_ex <- sum(!data$response %in% c("0", "1"))
 
 cat("==========================================================================\n")
-cat("  PASSO 2 — Test: risposta SI vs NO  (\"non so\" esclusi)\n")
-cat("  Formato colonne: n SI / N totale gruppo (%)  |  test per riga\n")
+cat("  PASSO 2 — Test: risposta 0 vs 1  (nc e ns esclusi)\n")
+cat("  Formato: n con valore=1 / N totale gruppo (%)  |  test per riga\n")
 cat("==========================================================================\n\n")
-cat(sprintf("  Risposta NO  = %d  |  Risposta SI = %d  |  Non so rimossi = %d\n\n",
-            n_no, n_si, n_ns))
+cat(sprintf("  Risposta 0 = %d  |  Risposta 1 = %d  |  nc/ns esclusi = %d\n\n",
+            n_0, n_1, n_ex))
 
-cat(sprintf("  %-10s  %-7s  %-22s  %-22s  %-8s  %-9s  %-8s\n",
-            "Variabile", "Rimossi",
-            sprintf("NO (n=%d)  si/tot(%%)", n_no),
-            sprintf("SI (n=%d)  si/tot(%%)", n_si),
+cat(sprintf("  %-10s  %-8s  %-22s  %-22s  %-8s  %-9s  %-8s\n",
+            "Variabile", "Esclusi",
+            sprintf("Risp.0 (n=%d)", n_0),
+            sprintf("Risp.1 (n=%d)", n_1),
             "Test", "Statistica", "p-value"))
 cat(paste(rep("-", 95), collapse = ""), "\n")
-
 for (i in seq_len(nrow(results))) {
   r <- results[i, ]
-  cat(sprintf("  %-10s  %-7s  %-22s  %-22s  %-8s  %-9s  %-8s %s\n",
-              r$Variabile, r$N_rimossi,
-              r$No_n_pct, r$Si_n_pct,
+  cat(sprintf("  %-10s  %-8s  %-22s  %-22s  %-8s  %-9s  %-8s %s\n",
+              r$Variabile, r$N_esclusi,
+              r$Gr0_1_pct, r$Gr1_1_pct,
               r$Test, r$Statistica, r$p_value, r$Significativo))
 }
-
 cat(paste(rep("-", 95), collapse = ""), "\n")
 cat("  * p < 0.05\n\n")
 
-# --- 6. Salva CSV confronto ---------------------------------------------------
 write.csv(results, "summary_chisq_results.csv", row.names = FALSE)
 cat("  Risultati salvati in: summary_chisq_results.csv\n")
