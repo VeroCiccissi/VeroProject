@@ -371,4 +371,123 @@ run;
 ods excel close;
 
 
+/* ── 10. NERIDRONATE PEDIATRIC AE EXTRACTION (ORACLE PASS-THROUGH) ─────── */
+/*  Requires macro vars: &ora_user, &ora_pass, &ora_path                       */
+/*  CLOB fix: all cp.generic_name comparisons use dbms_lob.substr(…,200)       */
+
+proc sql;
+    connect to oracle (user=&ora_user password=&ora_pass path=&ora_path);
+
+    create table WORK.AE_NERIDRONATE_PED as
+    select * from connection to oracle
+    (
+        select distinct
+            cm.case_id,
+            cm.case_num,
+            ce.seq_num,
+
+            lg.gender,
+            lrt.report_type,
+            cpi.pat_age,
+            lag.group_name                        as age_group,
+
+            /* CLOB fix */
+            dbms_lob.substr(cp.generic_name, 200) as generic_name,
+
+            /* Pediatric flag – consistent upper bound 17 (age < 18) */
+            case
+                when (cpi.pat_age between 0 and 17)
+                  or upper(lag.group_name) in
+                     ('NEONATE','INFANT','CHILD','ADOLESCENT')
+                then 'Pediatric'
+                else 'Not pediatric'
+            end                                   as age_category,
+
+            /* Case-level seriousness */
+            case ca.seriousness
+                when 1 then 'Yes'
+                when 0 then 'No'
+                else 'Unknown'
+            end                                   as case_serious,
+
+            /* Event */
+            ce.pref_term,
+            ce.body_sys                           as soc,
+
+            case ce.seriousness
+                when 1 then 'Yes'
+                when 0 then 'No'
+                else 'Unknown'
+            end                                   as event_serious,
+
+            ce.sc_death                           as fatal,
+            ce.sc_threat                          as life_threatening,
+
+            cl.title
+
+        from case_master cm
+
+            /* Patient info – was missing; required for pat_age / age_group */
+            left join case_patient_info cpi
+                on  cm.case_id      = cpi.case_id
+                and cpi.deleted     is null
+
+            left join lm_age_groups lag
+                on  lag.age_group_id = cpi.age_group_id
+
+            left join lm_gender lg
+                on  lg.gender_id    = cpi.gender_id
+
+            left join lm_report_type lrt
+                on  lrt.rpt_type_id = cm.rpt_type_id
+
+            left join case_assess ca
+                on  cm.case_id      = ca.case_id
+                and ca.deleted      is null
+
+            inner join case_product cp
+                on  cm.case_id      = cp.case_id
+                and cp.deleted      is null
+
+            inner join case_event ce
+                on  cm.case_id      = ce.case_id
+                and ce.deleted      is null
+
+            left join case_literature cl
+                on  cm.case_id      = cl.case_id
+                and cl.deleted      is null
+
+        where cm.deleted is null
+          and cm.state_id <> 1
+
+          /* Pediatric filter */
+          and (
+                cpi.pat_age between 0 and 17
+             or upper(lag.group_name) in ('NEONATE','INFANT','CHILD','ADOLESCENT')
+          )
+
+          /* Exclude non-event placeholder rows */
+          and upper(ce.pref_term) not like 'NO ADVERSE EVENT'
+
+          /* Drug filter – CLOB fix applied here too */
+          and upper(dbms_lob.substr(cp.generic_name, 200)) like '%NERIDRONATE SODIUM%'
+          and cp.drug_type = 1
+          and upper(dbms_lob.substr(cp.generic_name, 200)) not like '%NOT COMPANY%'
+
+        order by cm.case_id, ce.seq_num
+    );
+
+    disconnect from oracle;
+quit;
+
+/* Persist to network library */
+libname mylib "\\Vivaldi\Biostatistics\P\Neridr_pediatrico\26 Maggio 2026";
+
+data mylib.AE_NERIDRONATE_PED;
+    set WORK.AE_NERIDRONATE_PED;
+run;
+
+libname mylib clear;
+
+
 /* ── END OF PROGRAM ─────────────────────────────────────────────────────── */
