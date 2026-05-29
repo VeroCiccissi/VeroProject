@@ -371,64 +371,47 @@ run;
 ods excel close;
 
 
-/* ── 10. NERIDRONATE PEDIATRIC AE EXTRACTION (ORACLE PASS-THROUGH) ─────── */
+/* ── 10. NERIDRONATE OFF-LABEL USE EXTRACTION (ORACLE PASS-THROUGH) ─────── */
 /*  Requires macro vars: &ora_user, &ora_pass, &ora_path                       */
-/*  CLOB fix: all cp.generic_name comparisons use dbms_lob.substr(…,200)       */
+/*  CLOB fix: cp.generic_name accessed via dbms_lob.substr(…,200)              */
 
 proc sql;
     connect to oracle (user=&ora_user password=&ora_pass path=&ora_path);
 
-    create table WORK.AE_NERIDRONATE_PED as
+    create table WORK.NERIDRONATE_OFFLABEL as
     select * from connection to oracle
     (
         select distinct
             cm.case_id,
             cm.case_num,
-            ce.seq_num,
 
             lg.gender,
-            lrt.report_type,
             cpi.pat_age,
+            cpi.ind_pref_term,
             lag.group_name                        as age_group,
 
             /* CLOB fix */
             dbms_lob.substr(cp.generic_name, 200) as generic_name,
 
-            /* Pediatric flag – consistent upper bound 17 (age < 18) */
+            /* Init receipt date filter flag */
             case
-                when (cpi.pat_age between 0 and 17)
-                  or upper(lag.group_name) in
-                     ('NEONATE','INFANT','CHILD','ADOLESCENT')
-                then 'Pediatric'
-                else 'Not pediatric'
-            end                                   as age_category,
+                when cm.init_rept_date <= DATE '2025-07-04'
+                then 'ok'
+                else 'not ok'
+            end                                   as init_receipt_date,
 
-            /* Case-level seriousness */
-            case ca.seriousness
-                when 1 then 'Yes'
-                when 0 then 'No'
-                else 'Unknown'
-            end                                   as case_serious,
+            /* Off-label event term (null for non-off-label rows) */
+            case
+                when lower(ce.pref_term) = 'off label use'
+                then ce.pref_term
+                else null
+            end                                   as PT,
 
-            /* Event */
-            ce.pref_term,
-            ce.body_sys                           as soc,
-
-            case ce.seriousness
-                when 1 then 'Yes'
-                when 0 then 'No'
-                else 'Unknown'
-            end                                   as event_serious,
-
-            ce.sc_death                           as fatal,
-            ce.sc_threat                          as life_threatening,
-
-            cl.title
+            ce.body_sys                           as soc
 
         from case_master cm
 
-            /* Patient info – was missing; required for pat_age / age_group */
-            left join case_patient_info cpi
+            inner join case_pat_info cpi
                 on  cm.case_id      = cpi.case_id
                 and cpi.deleted     is null
 
@@ -438,8 +421,8 @@ proc sql;
             left join lm_gender lg
                 on  lg.gender_id    = cpi.gender_id
 
-            left join lm_report_type lrt
-                on  lrt.rpt_type_id = cm.rpt_type_id
+            left join case_prod_indication cpd
+                on  cm.case_id      = cpd.case_id
 
             left join case_assess ca
                 on  cm.case_id      = ca.case_id
@@ -453,25 +436,14 @@ proc sql;
                 on  cm.case_id      = ce.case_id
                 and ce.deleted      is null
 
-            left join case_literature cl
-                on  cm.case_id      = cl.case_id
-                and cl.deleted      is null
-
         where cm.deleted is null
           and cm.state_id <> 1
 
-          /* Pediatric filter */
-          and (
-                cpi.pat_age between 0 and 17
-             or upper(lag.group_name) in ('NEONATE','INFANT','CHILD','ADOLESCENT')
-          )
+          /* Off-label use filter */
+          and lower(ce.pref_term) = 'off label use'
 
-          /* Exclude non-event placeholder rows */
-          and upper(ce.pref_term) not like 'NO ADVERSE EVENT'
-
-          /* Drug filter – CLOB fix applied here too */
+          /* Drug filter – CLOB fix */
           and upper(dbms_lob.substr(cp.generic_name, 200)) like '%NERIDRONATE SODIUM%'
-          and cp.drug_type = 1
           and upper(dbms_lob.substr(cp.generic_name, 200)) not like '%NOT COMPANY%'
 
         order by cm.case_id, ce.seq_num
@@ -481,10 +453,16 @@ proc sql;
 quit;
 
 /* Persist to network library */
-libname mylib "\\Vivaldi\Biostatistics\P\Neridr_pediatrico\26 Maggio 2026";
+libname mylib "\\Vivaldi\ShBiostatistics\FV\Neridr_pediatrico\26 Maggio 2026";
 
-data mylib.AE_NERIDRONATE_PED;
-    set WORK.AE_NERIDRONATE_PED;
+data mylib.NERIDRONATE_OFFLABEL;
+    set WORK.NERIDRONATE_OFFLABEL;
+run;
+
+proc export data=mylib.NERIDRONATE_OFFLABEL
+    outfile="\\Vivaldi\ShBiostatistics\FV\Neridr_pediatrico\26 Maggio 2026\NERIDRONATE_OFFLABEL.xlsx"
+    dbms=xlsx
+    replace;
 run;
 
 libname mylib clear;
