@@ -394,12 +394,8 @@ proc sql;
             /* CLOB fix */
             dbms_lob.substr(cp.generic_name, 200) as generic_name,
 
-            /* Init receipt date filter flag */
-            case
-                when cm.init_rept_date <= DATE '2025-07-04'
-                then 'ok'
-                else 'not ok'
-            end                                   as init_receipt_date,
+            /* Init receipt date – only cases <= 2025-07-04 (filtered in WHERE) */
+            cm.init_rept_date             as init_receipt_date,
 
             /* Off-label event term (null for non-off-label rows) */
             case
@@ -436,6 +432,9 @@ proc sql;
 
         where cm.deleted is null
           and cm.state_id <> 1
+
+          /* Data cutoff – solo casi con init_rept_date <= 2025-07-04 */
+          and cm.init_rept_date <= DATE '2025-07-04'
 
           /* Off-label use filter */
           and lower(ce.pref_term) = 'off label use'
