@@ -384,6 +384,7 @@ proc sql;
         select distinct
             cm.case_id,
             cm.case_num,
+            ce.seq_num,
 
             lg.gender,
             cpi.pat_age,
