@@ -421,9 +421,6 @@ proc sql;
             left join lm_gender lg
                 on  lg.gender_id    = cpi.gender_id
 
-            left join case_prod_indication cpd
-                on  cm.case_id      = cpd.case_id
-
             left join case_assess ca
                 on  cm.case_id      = ca.case_id
                 and ca.deleted      is null
